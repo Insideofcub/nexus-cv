@@ -33,7 +33,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown("<h1 style='text-align: center;'>⚡ NexusCV Professional Intelligence Engine</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #6b7280;'>Search by skills, keywords, or match against a job description.</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #6b7280;'>Upload your zip folder once, then search and rank instantly.</p>", unsafe_allow_html=True)
 st.markdown("---")
 
 col1, col2 = st.columns(2)
@@ -52,28 +52,26 @@ with col1:
             elif jd_file.name.endswith(".docx"):
                 doc = Document(jd_file)
                 jd_text = "\n".join([p.text for p in doc.paragraphs])
-            st.success(f"Successfully loaded JD: {jd_file.name}")
-        except Exception as e:
-            st.error(f"Error reading JD file: {e}")
+        except Exception:
+            pass
 
 with col2:
     st.markdown("### 📂 2. Candidate Resumes Folder")
     zip_file = st.file_uploader("Upload Entire Resumes Folder (.zip)", type=["zip"], key="zip_upload")
-    if zip_file:
-        st.success(f"Successfully loaded Zip: {zip_file.name}")
 
 st.markdown("### 🔍 3. Search Filter / Skill Keyword")
 search_keyword = st.text_input("Type any skill, phone number, or keyword (e.g. coder, python, medical):")
 
-st.markdown("<br>", unsafe_allow_html=True)
-if st.button("🚀 Run Candidate Intelligence Engine"):
-    if not zip_file:
-        st.error("Please upload your zipped resume folder first.")
-    else:
-        with st.spinner("Processing candidate profiles from zip folder..."):
+# Initialize session state cache to prevent re-uploading
+if 'resume_cache' not in st.session_state:
+    st.session_state.resume_cache = None
+    st.session_state.zip_name = None
+
+# Cache resumes when a new zip is uploaded
+if zip_file is not None:
+    if st.session_state.zip_name != zip_file.name:
+        with st.spinner("Extracting and caching resumes from zip folder..."):
             resume_data = []
-            resume_texts = []
-            
             with tempfile.TemporaryDirectory() as tmp_dir:
                 zip_path = os.path.join(tmp_dir, "uploaded_resumes.zip")
                 with open(zip_path, "wb") as f:
@@ -96,11 +94,6 @@ if st.button("🚀 Run Candidate Intelligence Engine"):
                                     text = "\n".join([p.text for p in doc.paragraphs])
                                 
                                 if text.strip():
-                                    # If search keyword is typed, filter by it
-                                    if search_keyword.strip():
-                                        if search_keyword.lower() not in text.lower() and search_keyword.lower() not in file.lower():
-                                            continue
-                                            
                                     phones = re.findall(r'[\+\(?[0-9][0-9 .\-\(\)]{8,}[0-9]', text)
                                     phone_str = phones[0].strip() if phones else "Not Provided"
                                     
@@ -117,60 +110,77 @@ if st.button("🚀 Run Candidate Intelligence Engine"):
                                         "phone": phone_str,
                                         "email": email_str
                                     })
-                                    resume_texts.append(text)
                             except Exception:
                                 pass
+            st.session_state.resume_cache = resume_data
+            st.session_state.zip_name = zip_file.name
+            st.success(f"Successfully cached {len(resume_data)} resumes in memory!")
 
-            if not resume_texts:
-                st.warning("No matching candidates found matching your keyword criteria inside the zip file.")
-            else:
-                # If no JD is provided, use the search keyword as a pseudo-query, or rank by file relevance
-                target_text = jd_text if jd_text.strip() else (search_keyword if search_keyword.strip() else "resume candidate skills")
+st.markdown("<br>", unsafe_allow_html=True)
+if st.button("🚀 Run Candidate Intelligence Engine"):
+    if st.session_state.resume_cache is None:
+        st.error("Please upload your zipped resume folder first.")
+    else:
+        resume_data = st.session_state.resume_cache
+        
+        # Filter by keyword if provided
+        filtered_data = []
+        for candidate in resume_data:
+            if search_keyword.strip():
+                if search_keyword.lower() not in candidate['text'].lower() and search_keyword.lower() not in candidate['filename'].lower():
+                    continue
+            filtered_data.append(candidate)
+        
+        if not filtered_data:
+            st.warning("No matching candidates found matching your criteria.")
+        else:
+            resume_texts = [c['text'] for c in filtered_data]
+            target_text = jd_text if jd_text.strip() else (search_keyword if search_keyword.strip() else "resume candidate skills")
+            
+            vectorizer = TfidfVectorizer(stop_words='english', max_features=10000)
+            tfidf_matrix = vectorizer.fit_transform(resume_texts + [target_text])
+            
+            query_vector = tfidf_matrix[-1]
+            resume_vectors = tfidf_matrix[:-1]
+            
+            similarities = cosine_similarity(resume_vectors, query_vector).flatten()
+            ranked_indices = similarities.argsort()[::-1]
+            
+            st.markdown("---")
+            st.subheader(f"🏆 Candidate Pool Results ({len(filtered_data)} Matched)")
+            
+            for rank, idx in enumerate(ranked_indices, 1):
+                candidate = filtered_data[idx]
+                score = round(float(similarities[idx]) * 100, 2)
                 
-                vectorizer = TfidfVectorizer(stop_words='english', max_features=10000)
-                tfidf_matrix = vectorizer.fit_transform(resume_texts + [target_text])
+                display_name = os.path.splitext(candidate['filename'])[0].replace('_', ' ').replace('-', ' ').title()
+                summary_snippet = candidate['text'][:300].replace('\n', ' ')
                 
-                query_vector = tfidf_matrix[-1]
-                resume_vectors = tfidf_matrix[:-1]
-                
-                similarities = cosine_similarity(resume_vectors, query_vector).flatten()
-                ranked_indices = similarities.argsort()[::-1]
-                
-                st.markdown("---")
-                st.subheader(f"🏆 Candidate Pool Results ({len(resume_texts)} Matched)")
-                
-                for rank, idx in enumerate(ranked_indices, 1):
-                    candidate = resume_data[idx]
-                    score = round(float(similarities[idx]) * 100, 2)
-                    
-                    display_name = os.path.splitext(candidate['filename'])[0].replace('_', ' ').replace('-', ' ').title()
-                    summary_snippet = candidate['text'][:300].replace('\n', ' ')
-                    
-                    st.markdown(f"""
-                        <div class="candidate-card">
-                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <h3 style="margin: 0; color: #1f2937;">{display_name}</h3>
-                                <div>
-                                    <span style="background-color: #d1fae5; color: #065f46; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;">Match: {score}%</span>
-                                    <span style="background-color: #e0f2fe; color: #0369a1; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; margin-left: 5px;">Rank #{rank}</span>
-                                </div>
-                            </div>
-                            <p style="margin: 5px 0 10px 0; color: #4b5563; font-size: 14px;">📁 File: {candidate['filename']}</p>
-                            <p style="margin: 5px 0; color: #374151; font-size: 14px;">
-                                📞 <b>Phone:</b> {candidate['phone']} &nbsp;&nbsp;|&nbsp;&nbsp; ✉️ <b>Email:</b> {candidate['email']}
-                            </p>
-                            <div class="summary-box">
-                                <b>Profile Summary:</b> {summary_snippet}...
+                st.markdown(f"""
+                    <div class="candidate-card">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <h3 style="margin: 0; color: #1f2937;">{display_name}</h3>
+                            <div>
+                                <span style="background-color: #d1fae5; color: #065f46; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;">Match: {score}%</span>
+                                <span style="background-color: #e0f2fe; color: #0369a1; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; margin-left: 5px;">Rank #{rank}</span>
                             </div>
                         </div>
-                    """, unsafe_allow_html=True)
-                    
-                    with st.expander(f"📂 View Full CV Preview & Actions — {display_name}"):
-                        st.text_area("Full Resume Text", candidate['text'], height=250, key=f"preview_{rank}_{candidate['filename']}")
-                        st.download_button(
-                            label="📥 Download Original CV File",
-                            data=candidate["bytes"],
-                            file_name=candidate["filename"],
-                            mime="application/octet-stream",
-                            key=f"free_dl_{rank}_{candidate['filename']}"
-                        )
+                        <p style="margin: 5px 0 10px 0; color: #4b5563; font-size: 14px;">📁 File: {candidate['filename']}</p>
+                        <p style="margin: 5px 0; color: #374151; font-size: 14px;">
+                            📞 <b>Phone:</b> {candidate['phone']} &nbsp;&nbsp;|&nbsp;&nbsp; ✉️ <b>Email:</b> {candidate['email']}
+                        </p>
+                        <div class="summary-box">
+                            <b>Profile Summary:</b> {summary_snippet}...
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                with st.expander(f"📂 View Full CV Preview & Actions — {display_name}"):
+                    st.text_area("Full Resume Text", candidate['text'], height=250, key=f"preview_{rank}_{candidate['filename']}")
+                    st.download_button(
+                        label="📥 Download Original CV File",
+                        data=candidate["bytes"],
+                        file_name=candidate["filename"],
+                        mime="application/octet-stream",
+                        key=f"free_dl_{rank}_{candidate['filename']}"
+                    )
