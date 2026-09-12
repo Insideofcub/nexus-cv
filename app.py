@@ -38,6 +38,12 @@ st.markdown("<h1 style='text-align: center;'>⚡ NexusCV: Medical Coding Intelli
 st.markdown("<p style='text-align: center; color: #6b7280;'>Rank candidates dynamically based on your uploaded Job Description[cite: 1].</p>", unsafe_allow_html=True)
 st.markdown("---")
 
+# Initialize session state cache at the very beginning
+if 'resume_cache' not in st.session_state:
+    st.session_state.resume_cache = None
+if 'zip_name' not in st.session_state:
+    st.session_state.zip_name = None
+
 col1, col2 = st.columns(2)
 
 with col1:
@@ -62,15 +68,9 @@ with col2:
     st.markdown("### 📂 2. Candidate Resumes Folder")
     zip_file = st.file_uploader("Upload Entire Resumes Folder (.zip)", type=["zip"], key="zip_upload")
 
-st.markdown("### 🔍 3. Additional Filter / Keyword (Optional)")
-search_keyword = st.text_input("Type any extra keyword or skill to narrow down results:")
-
-if 'resume_cache' not in st.session_state:
-    st.session_state.resume_cache = None
-    st.session_state.zip_name = None
-
+# Check if a new zip file is provided and cache it permanently into session state
 if zip_file is not None:
-    if st.session_state.zip_name != zip_file.name:
+    if st.session_state.zip_name != zip_file.name or st.session_state.resume_cache is None:
         with st.spinner("Extracting and processing candidate profiles..."):
             resume_data = []
             with tempfile.TemporaryDirectory() as tmp_dir:
@@ -122,7 +122,12 @@ if zip_file is not None:
                                 pass
             st.session_state.resume_cache = resume_data
             st.session_state.zip_name = zip_file.name
-            st.success(f"Successfully cached {len(resume_data)} resumes in memory!")
+
+if st.session_state.resume_cache is not None:
+    st.success(f"📂 Cached Resumes Ready: {len(st.session_state.resume_cache)} files loaded in memory.")
+
+st.markdown("### 🔍 3. Additional Filter / Keyword (Optional)")
+search_keyword = st.text_input("Type any extra keyword or skill to narrow down results:")
 
 st.markdown("<br>", unsafe_allow_html=True)
 if st.button("🚀 Run Candidate Intelligence Engine"):
@@ -143,7 +148,6 @@ if st.button("🚀 Run Candidate Intelligence Engine"):
         else:
             resume_texts = [c['text'] for c in filtered_data]
             
-            # Prioritize uploaded JD text as the evaluation query
             target_text = jd_text.strip() if jd_text.strip() else (search_keyword.strip() if search_keyword.strip() else "medical coder ICD-10 CPT DRG")
             
             vectorizer = TfidfVectorizer(stop_words='english', max_features=10000)
