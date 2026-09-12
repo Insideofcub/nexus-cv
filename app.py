@@ -33,13 +33,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown("<h1 style='text-align: center;'>⚡ NexusCV Professional Intelligence Engine</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #6b7280;'>Full robust upload pipeline for JD and Resume folders.</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #6b7280;'>Search by skills, keywords, or match against a job description.</p>", unsafe_allow_html=True)
 st.markdown("---")
 
 col1, col2 = st.columns(2)
 
 with col1:
-    st.markdown("### 📋 1. Job Description")
+    st.markdown("### 📋 1. Job Description (Optional)")
     jd_file = st.file_uploader("Upload Job Description (.txt, .pdf, .docx)", type=["txt", "pdf", "docx"], key="jd_upload")
     jd_text = ""
     if jd_file:
@@ -62,15 +62,13 @@ with col2:
     if zip_file:
         st.success(f"Successfully loaded Zip: {zip_file.name}")
 
-st.markdown("### 🔍 3. Search Filter (Optional)")
-search_keyword = st.text_input("Type any skill, phone number, or keyword to instantly filter candidates:")
+st.markdown("### 🔍 3. Search Filter / Skill Keyword")
+search_keyword = st.text_input("Type any skill, phone number, or keyword (e.g. coder, python, medical):")
 
 st.markdown("<br>", unsafe_allow_html=True)
 if st.button("🚀 Run Candidate Intelligence Engine"):
-    if not jd_text.strip():
-        st.error("Please upload and provide a valid Job Description first.")
-    elif not zip_file:
-        st.error("Please upload your zipped resume folder.")
+    if not zip_file:
+        st.error("Please upload your zipped resume folder first.")
     else:
         with st.spinner("Processing candidate profiles from zip folder..."):
             resume_data = []
@@ -98,6 +96,7 @@ if st.button("🚀 Run Candidate Intelligence Engine"):
                                     text = "\n".join([p.text for p in doc.paragraphs])
                                 
                                 if text.strip():
+                                    # If search keyword is typed, filter by it
                                     if search_keyword.strip():
                                         if search_keyword.lower() not in text.lower() and search_keyword.lower() not in file.lower():
                                             continue
@@ -123,10 +122,13 @@ if st.button("🚀 Run Candidate Intelligence Engine"):
                                 pass
 
             if not resume_texts:
-                st.warning("No matching candidates found matching your criteria inside the zip file.")
+                st.warning("No matching candidates found matching your keyword criteria inside the zip file.")
             else:
+                # If no JD is provided, use the search keyword as a pseudo-query, or rank by file relevance
+                target_text = jd_text if jd_text.strip() else (search_keyword if search_keyword.strip() else "resume candidate skills")
+                
                 vectorizer = TfidfVectorizer(stop_words='english', max_features=10000)
-                tfidf_matrix = vectorizer.fit_transform(resume_texts + [jd_text])
+                tfidf_matrix = vectorizer.fit_transform(resume_texts + [target_text])
                 
                 query_vector = tfidf_matrix[-1]
                 resume_vectors = tfidf_matrix[:-1]
