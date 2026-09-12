@@ -8,7 +8,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 st.set_page_config(page_title="NexusCV Free", page_icon="⚡", layout="wide")
 
 st.markdown("<h1 style='text-align: center;'>⚡ NexusCV Free Intelligence Engine</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #9ca3af;'>100% Free, zero-API-cost resume ranking in the cloud.</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #9ca3af;'>Upload your batch of resumes directly and rank them instantly.</p>", unsafe_allow_html=True)
 st.markdown("---")
 
 col1, col2 = st.columns(2)
@@ -29,7 +29,8 @@ with col1:
 
 with col2:
     st.markdown("### 📂 2. Candidate Resumes")
-    resume_files = st.file_uploader("Upload Resumes (Multiple PDFs or Word docs)", type=["pdf", "docx"], accept_multiple_files=True, key="res_free")
+    # accept_multiple_files=True allows selecting a batch of files at once
+    resume_files = st.file_uploader("Upload Resumes (Select multiple PDFs or Word docs)", type=["pdf", "docx"], accept_multiple_files=True, key="res_free")
 
 st.markdown("<br>", unsafe_allow_html=True)
 if st.button("🚀 Run Free Ranking"):
@@ -38,7 +39,7 @@ if st.button("🚀 Run Free Ranking"):
     elif not resume_files:
         st.error("Please upload at least one resume.")
     else:
-        with st.spinner("Analyzing resumes locally for free..."):
+        with st.spinner(f"Analyzing {len(resume_files)} resumes locally..."):
             resume_data = []
             resume_texts = []
             
@@ -66,7 +67,7 @@ if st.button("🚀 Run Free Ranking"):
                 ranked_indices = similarities.argsort()[::-1]
                 
                 st.markdown("---")
-                st.subheader("🏆 Free Ranking Results")
+                st.subheader(f"🏆 Top Ranked Candidates ({len(resume_files)} Processed)")
                 
                 for rank, idx in enumerate(ranked_indices, 1):
                     candidate = resume_data[idx]
